@@ -6,6 +6,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"simple-auth/internal/apperror"
+	"simple-auth/internal/httpx"
 	"simple-auth/internal/middleware"
 	"simple-auth/internal/user"
 )
@@ -17,11 +19,18 @@ type Handlers struct {
 
 // NewRouter builds the Gin engine with global middleware and all routes.
 func NewRouter(db *gorm.DB, h Handlers) *gin.Engine {
+	httpx.SetupValidator() // validation errors use JSON field names
+
 	r := gin.New() // empty engine: we choose the middleware ourselves
-	r.Use(middleware.Logger(), gin.Recovery())
+	r.Use(middleware.Logger(), middleware.Recovery())
 
 	// We are not behind a proxy, so don't trust X-Forwarded-For headers.
 	_ = r.SetTrustedProxies(nil)
+
+	// Unknown routes get the same JSON error shape as everything else
+	r.NoRoute(func(c *gin.Context) {
+		httpx.Error(c, apperror.NotFound("route not found"))
+	})
 
 	r.GET("/health", healthHandler(db))
 

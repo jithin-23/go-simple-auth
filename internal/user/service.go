@@ -2,21 +2,13 @@ package user
 
 import (
 	"context"
-	"errors"
 	"strings"
 
-	"gorm.io/gorm"
-
+	"simple-auth/internal/apperror"
 	"simple-auth/internal/password"
 )
 
-// Errors the service returns. The handler turns these into HTTP status codes.
-var (
-	ErrNotFound   = errors.New("user not found")
-	ErrEmailTaken = errors.New("email already in use")
-)
-
-// Service holds the business rules for users. It knows nothing about HTTP.
+// Service holds the business rules for users. It knows nothing about HTTP or GORM.
 type Service struct {
 	repo Repository
 }
@@ -33,7 +25,7 @@ func (s *Service) Create(ctx context.Context, req CreateUserRequest) (*User, err
 
 	hash, err := password.Hash(req.Password)
 	if err != nil {
-		return nil, err
+		return nil, apperror.Internal(err)
 	}
 
 	role := req.Role
@@ -53,16 +45,12 @@ func (s *Service) List(ctx context.Context) ([]User, error) {
 }
 
 func (s *Service) GetByID(ctx context.Context, id uint) (*User, error) {
-	u, err := s.repo.FindByID(ctx, id)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, ErrNotFound
-	}
-	return u, err
+	return s.repo.FindByID(ctx, id)
 }
 
 // Update changes only the fields that were sent (non-nil pointers).
 func (s *Service) Update(ctx context.Context, id uint, req UpdateUserRequest) (*User, error) {
-	u, err := s.GetByID(ctx, id)
+	u, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +70,7 @@ func (s *Service) Update(ctx context.Context, id uint, req UpdateUserRequest) (*
 	if req.Password != nil {
 		hash, err := password.Hash(*req.Password)
 		if err != nil {
-			return nil, err
+			return nil, apperror.Internal(err)
 		}
 		u.PasswordHash = hash
 	}
@@ -94,20 +82,17 @@ func (s *Service) Update(ctx context.Context, id uint, req UpdateUserRequest) (*
 }
 
 func (s *Service) Delete(ctx context.Context, id uint) error {
-	err := s.repo.Delete(ctx, id)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return ErrNotFound
-	}
-	return err
+	return s.repo.Delete(ctx, id)
 }
 
-// ensureEmailFree returns ErrEmailTaken if another user already has this email.
+// ensureEmailFree returns a Conflict error if another user already has this email.
+// (The unique index is the final safety net for two requests arriving at once.)
 func (s *Service) ensureEmailFree(ctx context.Context, email string) error {
 	_, err := s.repo.FindByEmail(ctx, email)
 	switch {
 	case err == nil:
-		return ErrEmailTaken
-	case errors.Is(err, gorm.ErrRecordNotFound):
+		return apperror.Conflict("email already in use")
+	case apperror.Is(err, apperror.CodeNotFound):
 		return nil
 	default:
 		return err
