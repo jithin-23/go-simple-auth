@@ -53,7 +53,12 @@ func (s *Service) GetByEmail(ctx context.Context, email string) (*User, error) {
 }
 
 // Update changes only the fields that were sent (non-nil pointers).
-func (s *Service) Update(ctx context.Context, id uint, req UpdateUserRequest) (*User, error) {
+// Regular users can only update themselves; admins can update anyone.
+func (s *Service) Update(ctx context.Context, actor Actor, id uint, req UpdateUserRequest) (*User, error) {
+	if !actor.IsAdmin() && actor.ID != id {
+		return nil, apperror.Forbidden("you can only update your own profile")
+	}
+
 	u, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -85,8 +90,59 @@ func (s *Service) Update(ctx context.Context, id uint, req UpdateUserRequest) (*
 	return u, nil
 }
 
+// ChangeRole promotes or demotes a user (admin only). The last admin can't be demoted.
+func (s *Service) ChangeRole(ctx context.Context, actor Actor, id uint, role Role) (*User, error) {
+	if !actor.IsAdmin() {
+		return nil, apperror.Forbidden("only admins can change roles")
+	}
+
+	u, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if u.Role == role {
+		return u, nil // nothing to change
+	}
+
+	if u.Role == RoleAdmin {
+		if err := s.ensureNotLastAdmin(ctx, "demote"); err != nil {
+			return nil, err
+		}
+	}
+
+	u.Role = role
+	if err := s.repo.Update(ctx, u); err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+// Delete soft-deletes a user. The last admin can't be deleted.
 func (s *Service) Delete(ctx context.Context, id uint) error {
+	u, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	if u.Role == RoleAdmin {
+		if err := s.ensureNotLastAdmin(ctx, "delete"); err != nil {
+			return err
+		}
+	}
+
 	return s.repo.Delete(ctx, id)
+}
+
+// ensureNotLastAdmin stops an action that would leave the system with no admin.
+func (s *Service) ensureNotLastAdmin(ctx context.Context, action string) error {
+	admins, err := s.repo.CountByRole(ctx, RoleAdmin)
+	if err != nil {
+		return err
+	}
+	if admins <= 1 {
+		return apperror.Conflict("cannot " + action + " the last admin")
+	}
+	return nil
 }
 
 // ensureEmailFree returns a Conflict error if another user already has this email.

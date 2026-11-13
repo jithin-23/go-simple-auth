@@ -3,6 +3,8 @@ package database
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
 	"time"
 
 	"gorm.io/driver/postgres"
@@ -15,8 +17,13 @@ import (
 // Connect opens a GORM connection pool to Postgres and verifies it with a ping.
 func Connect(cfg config.DBConfig) (*gorm.DB, error) {
 	db, err := gorm.Open(postgres.Open(cfg.DSN()), &gorm.Config{
-		Logger:         logger.Default.LogMode(logger.Warn), // only log slow queries and errors
-		TranslateError: true,                                // turn Postgres errors into gorm.ErrDuplicatedKey etc.
+		Logger: logger.New(log.New(os.Stdout, "\n", log.LstdFlags), logger.Config{
+			SlowThreshold:             200 * time.Millisecond, // log queries slower than this
+			LogLevel:                  logger.Warn,            // only log slow queries and errors
+			IgnoreRecordNotFoundError: true,                   // "not found" is normal, not an error
+			Colorful:                  true,
+		}),
+		TranslateError: true, // turn Postgres errors into gorm.ErrDuplicatedKey etc.
 	})
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)

@@ -49,3 +49,8 @@ func ToResponseList(users []User) []UserResponse {
 	}
 	return out
 }
+
+// UpdateRoleRequest is the JSON body for PATCH /users/:id/role (admin only).
+type UpdateRoleRequest struct {
+	Role Role `json:"role" binding:"required,oneof=user admin"`
+}

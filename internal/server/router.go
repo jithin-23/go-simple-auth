@@ -38,10 +38,12 @@ func NewRouter(db *gorm.DB, tokens *token.Manager, h Handlers) *gin.Engine {
 	r.GET("/health", healthHandler(db))
 
 	api := r.Group("/api/v1")
+
 	requireAuth := middleware.RequireAuth(tokens)
+	requireAdmin := middleware.RequireRole(string(user.RoleAdmin))
 
 	h.Auth.RegisterRoutes(api, requireAuth)
-	h.User.RegisterRoutes(api)
+	h.User.RegisterRoutes(api, requireAuth, requireAdmin)
 
 	return r
 }

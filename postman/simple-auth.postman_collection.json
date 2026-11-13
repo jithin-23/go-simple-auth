@@ -1,8 +1,8 @@
 {
   "info": {
-    "_postman_id": "56fc0dfd-9b33-479f-a88a-f387ea406ac7",
+    "_postman_id": "6d820842-11dd-46a8-8511-1bbe42f2812f",
     "name": "simple-auth (Go)",
-    "description": "REST API for the Go `simple-auth` project (Gin + GORM + PostgreSQL + JWT).\n\n## Quick start\n1. Start the API: `make db-up && make migrate-up && make dev`\n2. **Once:** create the admin: `make seed-admin email=admin@example.com password=admin12345`\n3. Select the **simple-auth local** environment (top right).\n4. Run **01 Auth → Sign up**, **Log in** and **Log in as admin**. Both tokens are saved automatically.\n5. Every other request now works. Or run the whole collection with the **Runner** (top to bottom).\n\n## How auth works here\nAuth is set **once on the collection**: `Bearer {{accessToken}}` (the regular user). Requests inherit it. Admin-only requests override it with `Bearer {{adminToken}}`. Public requests (health, signup, login) are set to *No Auth*.\n\n## Variables\n- **Environment** (config you edit): `baseUrl`, `userName`, `userPassword`, `adminEmail`, `adminPassword`\n- **Collection variables** (filled by scripts while running): `userEmail`, `userId`, `accessToken`, `otherUserEmail`, `managedUserEmail`, `managedUserId`, `adminToken`, `adminId`\n\n## Error format\nEvery error is `{ \"error\": { \"code\", \"message\", \"fields\"? } }`. A collection-level test checks this on every 4xx/5xx response.",
+    "description": "REST API for the Go `simple-auth` project (Gin + GORM + PostgreSQL + JWT).\n\n## Quick start\n1. Start the API: `make db-up && make migrate-up && make dev`\n2. **Once:** run **01 Auth → Sign up admin account**, then promote it: `echo \"UPDATE users SET role = 'admin' WHERE email = 'admin@example.com';\" | make db-psql`\n3. Select the **simple-auth local** environment (top right).\n4. Run **01 Auth → Sign up**, **Log in** and **Log in as admin**. Both tokens are saved automatically.\n5. Every other request now works. Or run the whole collection with the **Runner** (top to bottom).\n\n## How auth works here\nAuth is set **once on the collection**: `Bearer {{accessToken}}` (the regular user). Requests inherit it. Admin-only requests override it with `Bearer {{adminToken}}`. Public requests (health, signup, login) are set to *No Auth*.\n\n## Variables\n- **Environment** (config you edit): `baseUrl`, `userName`, `userPassword`, `adminEmail`, `adminPassword`\n- **Collection variables** (filled by scripts while running): `userEmail`, `userId`, `accessToken`, `otherUserEmail`, `managedUserEmail`, `managedUserId`, `adminToken`, `adminId`\n\n## Error format\nEvery error is `{ \"error\": { \"code\", \"message\", \"fields\"? } }`. A collection-level test checks this on every 4xx/5xx response.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -86,12 +86,12 @@
     {
       "key": "adminEmail",
       "value": "admin@example.com",
-      "description": "Seeded with make seed-admin"
+      "description": "Admin account (promoted with SQL)"
     },
     {
       "key": "adminPassword",
       "value": "admin12345",
-      "description": "Seeded with make seed-admin"
+      "description": "Admin account (promoted with SQL)"
     },
     {
       "key": "adminToken",
@@ -275,6 +275,43 @@
           ]
         },
         {
+          "name": "Sign up admin account (one-time)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/auth/signup",
+            "description": "Creates the account for `adminEmail` (as a regular user, like any signup). Returns `409` on later runs because it already exists, which is fine.\n\n**Then, once, make it an admin in the database:**\n\n```bash\necho \"UPDATE users SET role = 'admin' WHERE email = 'admin@example.com';\" | make db-psql\n```",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Admin\",\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 Created (first run) or 409 Conflict (already exists)\", () => pm.expect([201, 409]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Log in as admin",
           "request": {
             "method": "POST",
@@ -285,7 +322,7 @@
               }
             ],
             "url": "{{baseUrl}}/api/v1/auth/login",
-            "description": "Logs in as the seeded admin and saves the token in `adminToken`. Admin-only requests use this token.\n\n**One-time setup:** create the admin first with `make seed-admin email=admin@example.com password=admin12345` (matching `adminEmail` / `adminPassword` in the environment).",
+            "description": "Logs in as `adminEmail` and saves the token in `adminToken`. Admin-only requests use this token.\n\nThe account must have `role = 'admin'` in the database (see *Sign up admin account*).",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}",
@@ -305,7 +342,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"200 OK (if 401: run `make seed-admin` first, see description)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
                   "",
                   "const body = pm.response.json();",
                   "pm.test(\"Returns an access token\", () => pm.expect(body.accessToken).to.be.a(\"string\"));",
@@ -314,7 +351,9 @@
                   "",
                   "// The token's payload (middle part) contains the admin's id as \"uid\"",
                   "const payload = JSON.parse(atob(body.accessToken.split(\".\")[1].replace(/-/g, \"+\").replace(/_/g, \"/\")));",
-                  "pm.collectionVariables.set(\"adminId\", payload.uid);"
+                  "pm.collectionVariables.set(\"adminId\", payload.uid);",
+                  "",
+                  "pm.test(\"Account has the admin role (if not: run the UPDATE from 'Sign up admin account')\", () => pm.expect(payload.role).to.equal(\"admin\"));"
                 ]
               }
             }

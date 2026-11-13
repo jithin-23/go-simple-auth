@@ -18,11 +18,14 @@ Start the API first:
 make db-up && make migrate-up && make dev
 ```
 
-**Once**, create the admin the collection logs in as (matches `adminEmail` / `adminPassword`):
+**Once**, set up the admin the collection logs in as (`adminEmail` / `adminPassword`):
 
-```bash
-make seed-admin email=admin@example.com password=admin12345
-```
+1. Run **01 Auth → Sign up admin account** (creates `admin@example.com` as a regular user).
+2. Promote it in the database:
+
+   ```bash
+   echo "UPDATE users SET role = 'admin' WHERE email = 'admin@example.com';" | make db-psql
+   ```
 
 - **Manually:** run **01 Auth → Sign up**, **Log in** and **Log in as admin**. Both tokens are saved automatically.
 - **Everything at once:** right-click the collection → **Run collection** → **Run**. Requests run top to bottom and each one checks its own result.

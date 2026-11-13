@@ -18,6 +18,7 @@ type Repository interface {
 	FindByEmail(ctx context.Context, email string) (*User, error)
 	Update(ctx context.Context, u *User) error
 	Delete(ctx context.Context, id uint) error
+	CountByRole(ctx context.Context, role Role) (int64, error)
 }
 
 // GormRepository implements Repository using GORM + Postgres.
@@ -70,6 +71,13 @@ func (r *GormRepository) Delete(ctx context.Context, id uint) error {
 		return apperror.NotFound("user not found")
 	}
 	return nil
+}
+
+// CountByRole counts users (not soft-deleted) with the given role.
+func (r *GormRepository) CountByRole(ctx context.Context, role Role) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&User{}).Where("role = ?", role).Count(&count).Error
+	return count, translate(err)
 }
 
 // translate maps GORM/Postgres errors to apperror values.
