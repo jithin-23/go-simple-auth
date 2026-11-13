@@ -7,18 +7,21 @@ import (
 	"gorm.io/gorm"
 
 	"simple-auth/internal/apperror"
+	"simple-auth/internal/auth"
 	"simple-auth/internal/httpx"
 	"simple-auth/internal/middleware"
+	"simple-auth/internal/token"
 	"simple-auth/internal/user"
 )
 
 // Handlers groups every feature's handler so NewRouter has one parameter per concern.
 type Handlers struct {
+	Auth *auth.Handler
 	User *user.Handler
 }
 
 // NewRouter builds the Gin engine with global middleware and all routes.
-func NewRouter(db *gorm.DB, h Handlers) *gin.Engine {
+func NewRouter(db *gorm.DB, tokens *token.Manager, h Handlers) *gin.Engine {
 	httpx.SetupValidator() // validation errors use JSON field names
 
 	r := gin.New() // empty engine: we choose the middleware ourselves
@@ -35,7 +38,9 @@ func NewRouter(db *gorm.DB, h Handlers) *gin.Engine {
 	r.GET("/health", healthHandler(db))
 
 	api := r.Group("/api/v1")
+	requireAuth := middleware.RequireAuth(tokens)
 
+	h.Auth.RegisterRoutes(api, requireAuth)
 	h.User.RegisterRoutes(api)
 
 	return r

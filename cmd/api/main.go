@@ -6,9 +6,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"simple-auth/internal/auth"
 	"simple-auth/internal/config"
 	"simple-auth/internal/database"
 	"simple-auth/internal/server"
+	"simple-auth/internal/token"
 	"simple-auth/internal/user"
 )
 
@@ -31,12 +33,20 @@ func main() {
 	}
 	slog.Info("database connected")
 
+	// Wire the layers by hand: repository → service → handler (≈ Nest's DI container)
 	userRepo := user.NewGormRepository(db)
 	userService := user.NewService(userRepo)
 	userHandler := user.NewHandler(userService)
 
+	tokens := token.NewManager(cfg.JWT.Secret, cfg.JWT.TTL)
+	authService := auth.NewService(userService, tokens)
+	authHandler := auth.NewHandler(authService)
+
 	gin.SetMode(cfg.GinMode)
-	router := server.NewRouter(db, server.Handlers{User: userHandler})
+	router := server.NewRouter(db, tokens, server.Handlers{
+		Auth: authHandler,
+		User: userHandler,
+	})
 
 	slog.Info("server starting", "addr", ":"+cfg.Port)
 	if err := router.Run(":" + cfg.Port); err != nil {

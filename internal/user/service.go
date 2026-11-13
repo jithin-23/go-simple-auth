@@ -48,6 +48,10 @@ func (s *Service) GetByID(ctx context.Context, id uint) (*User, error) {
 	return s.repo.FindByID(ctx, id)
 }
 
+func (s *Service) GetByEmail(ctx context.Context, email string) (*User, error) {
+	return s.repo.FindByEmail(ctx, normalizeEmail(email))
+}
+
 // Update changes only the fields that were sent (non-nil pointers).
 func (s *Service) Update(ctx context.Context, id uint, req UpdateUserRequest) (*User, error) {
 	u, err := s.repo.FindByID(ctx, id)
